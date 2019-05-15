@@ -12,7 +12,7 @@ mod builtins;
 fn main() {
     let matches = App::new("Suro Interpreter")
         .version("0.0.1")
-        .author("mdkotlik (mdkotlik@gmail.com)")
+        .author("Matias Kotlik (mdkotlik) <mdkotlik@gmail.com>")
         .about("Compiler for the suro language")
         .arg(Arg::with_name("FILE")
             .help("The file to run")

@@ -1,0 +1,8 @@
+{
+let mem a = 2 + (3 * 7);
+call print with ("Hello, World!");
+call print with (a);
+call print with (a * 5);
+call print with ("Aboishk is silver " * 4);
+return 1;
+}

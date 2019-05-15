@@ -1,0 +1,15 @@
+// parser grammar
+// ? means optional
+// * means 0 or more
+// + means 1 or more
+PROGRAM = BLOCK
+BLOCK = '{' ( LINE )* '}'
+LINE = STATEMENT ';'
+STATEMENT = 'make' 'memvar' <IDENT> '=' EXPR
+            | return EXPR
+            | EXPR
+EXPR = TERM ( ( '+' | '-' ) TERM )*
+TERM = FACTOR ( ( '*' | '/' ) FACTOR )*
+STRING = "Value"
+FACTOR = <NUMBER> | STRING | <IDENT> | '(' EXPR ')'
+         | 'call' <FACTOR> ( 'with' '(' EXPR ( ',' EXPR )* ')' )?

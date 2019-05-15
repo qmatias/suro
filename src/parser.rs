@@ -1,48 +1,45 @@
 use crate::token::{Token, Type};
+use crate::scope::Scope;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TermOp {
     Mul,
     Div,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ExprOp {
     Add,
     Sub,
 }
 
 #[derive(Debug)]
-pub enum VarType {
-    Memvar,
-}
-
-#[derive(Debug)]
 pub struct Program {
-    pub block: BlockStatement,
+    pub body: Statement,
 }
 
-#[derive(Debug)]
-pub struct BlockStatement {
-    pub statements: Vec<Statement>,
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Assign {
         ident: String,
-        var_type: VarType,
         expr: Expr,
     },
+    FunctionDec {
+        params: Vec<String>,
+        body: Box<Statement>,
+    },
     Return {
-        expr: Expr,
+        statement: Box<Statement>,
     },
     Simple {
         expr: Expr,
     },
+    BlockStatement {
+        statements: Vec<Statement>,
+    },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     FunctionCall {
         func: Factor,
@@ -54,13 +51,13 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Term {
     pub factors: Vec<Factor>,
     pub ops: Vec<TermOp>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Factor {
     IntFactor(i32),
     StringFactor(String),
@@ -88,23 +85,25 @@ impl Parser {
     // PROGRAM = BLOCK
     fn parse_program(&mut self) -> Program {
         let program = Program {
-            block: self.parse_block(),
+            body: self.parse_statement(),
         };
         self.expect_consume(Type::EOF);
         program
     }
 
     // BLOCK = '{' ( LINE )* '}'
-    fn parse_block(&mut self) -> BlockStatement {
+    fn parse_block(&mut self) -> Statement {
         self.expect_consume(Type::BlockStart);
-        let mut block = BlockStatement {
-            statements: Vec::new(),
-        };
-        while self.current_unwrap().token_type != Type::BlockEnd {
-            block.statements.push(self.parse_line());
-        };
-        self.expect_consume(Type::BlockEnd);
-        block
+        Statement::BlockStatement {
+            statements: {
+                let mut lst = Vec::new();
+                while self.current_unwrap().token_type != Type::BlockEnd {
+                    lst.push(self.parse_line());
+                };
+                self.expect_consume(Type::BlockEnd);
+                lst
+            }
+        }
     }
 
     // LINE = STATEMENT ';'
@@ -114,31 +113,29 @@ impl Parser {
         statement
     }
 
-    // STATEMENT = 'let' 'memvar' <IDENT> '=' EXPR
-    //             | return EXPR
-    //             | EXPR
+    // STATEMENT = 'make' 'memvar' <IDENT> '=' EXPR
+    //            | return STATEMENT
+    //            | EXPR
+    //            | BLOCK
     fn parse_statement(&mut self) -> Statement {
         match self.current_unwrap().token_type {
             Type::Assignment => {
                 self.consume_unwrap(); // consume let
-                let var_token_type = self.consume_unwrap().token_type;
-                let var_type = match var_token_type { // consume vartype
-                    Type::Memvar => VarType::Memvar,
-                    _ => panic!("Expected VarType, got {:?}", self.current_unwrap()),
-                };
-                let ident = self.expect_consume(Type::Ident).str;
-                self.expect_consume(Type::AssignmentOp); // consume =
+                let ident = self.expect_consume(Type::Ident).str; // consume and store ident
+                self.expect_consume(Type::AssignmentOp); // consume equals sine
                 let expr = self.parse_expr();
                 Statement::Assign {
-                    var_type,
                     ident,
                     expr,
                 }
-            }
+            },
             Type::Return => {
                 self.consume_unwrap(); // consume return
-                Statement::Return { expr: self.parse_expr() }
-            }
+                Statement::Return { statement: Box::new(self.parse_statement()) }
+            },
+            Type::BlockStart => {
+                self.parse_block()
+            },
             _ => Statement::Simple { expr: self.parse_expr() },
         }
     }
@@ -233,7 +230,7 @@ impl Parser {
     fn expect_consume(&mut self, consume_type: Type) -> Token {
         let got = self.consume_unwrap();
         if got.token_type != consume_type {
-            panic!("Expected {:?}, got {:?}", consume_type, got.token_type);
+            panic!("Expected {:?}, got {:?}", consume_type, got);
         }
         got
     }

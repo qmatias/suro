@@ -1,37 +1,63 @@
 use crate::scope::Scope;
-use crate::parser::{Program, BlockStatement, Statement, VarType, Expr, TermOp, ExprOp, Term, Factor};
+use crate::parser::{Program, Statement, Expr, TermOp, ExprOp, Term, Factor};
 use crate::object::Object;
+use core::borrow::Borrow;
+use std::mem;
 
 pub struct Interpreter {
-    current_scope: Box<Scope>,
+    current_scope: Scope,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
-        Interpreter { current_scope: Box::new(Scope::new_root()) }
+        Interpreter { current_scope: Scope::new_root() }
     }
 
     pub fn eval_program(&mut self, program: &Program) -> Object {
-        self.eval_block(&program.block)
+        self.eval_statement(&program.body)
     }
 
-    pub fn eval_block(&mut self, block: &BlockStatement) -> Object {
-        for statement in &block.statements {
+    pub fn extend_scope(&mut self) {
+        self.current_scope = mem::replace(&mut self.current_scope, Scope::new_empty()).extend();
+    }
+
+    pub fn retrieve_scope(&mut self) {
+        self.current_scope = mem::replace(&mut self.current_scope, Scope::new_empty()).retrieve();
+    }
+
+    pub fn eval_block_vec(&mut self, statements: &Vec<Statement>) -> Object {
+        self.extend_scope();
+        for statement in statements {
             match statement {
-                Statement::Assign { ident, var_type, expr } => {
-                    match var_type {
-                        VarType::Memvar => self.current_scope.set_memvar(ident, &self.eval_expr(expr)),
-                    };
+                Statement::Return { statement: ret_stmt } => {
+                    return self.eval_statement(ret_stmt);
                 },
-                Statement::Simple { expr } => {
-                    self.eval_expr(expr);
-                },
-                Statement::Return { expr } => {
-                    return self.eval_expr(expr);
-                },
-            }
+                _ => self.eval_statement(statement),
+            };
         }
+        self.retrieve_scope();
         Object::Null
+    }
+
+    pub fn eval_statement(&mut self, statement: &Statement) -> Object {
+        match statement {
+            Statement::BlockStatement { statements } => {
+                self.eval_block_vec(statements)
+            },
+            Statement::Assign { ident, expr } => {
+                self.current_scope.set(ident, &self.eval_expr(expr));
+                Object::Null
+            },
+            Statement::Simple { expr } => {
+                self.eval_expr(expr)
+            },
+            Statement::Return { statement: ret_stmt } => {
+                panic!("Attempted to use return outside of block");
+            },
+            Statement::FunctionDec { params, body } => {
+                Object::Function(params.clone(), *(body).clone())
+            },
+        }
     }
 
     pub fn eval_expr(&self, expr: &Expr) -> Object {

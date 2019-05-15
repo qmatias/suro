@@ -6,10 +6,12 @@ PROGRAM = BLOCK
 BLOCK = '{' ( LINE )* '}'
 LINE = STATEMENT ';'
 STATEMENT = 'make' 'memvar' <IDENT> '=' EXPR
-            | return EXPR
+            | return STATEMENT
             | EXPR
+            | BLOCK
 EXPR = TERM ( ( '+' | '-' ) TERM )*
 TERM = FACTOR ( ( '*' | '/' ) FACTOR )*
 STRING = "Value"
 FACTOR = <NUMBER> | STRING | <IDENT> | '(' EXPR ')'
          | 'call' <FACTOR> ( 'with' '(' EXPR ( ',' EXPR )* ')' )?
+         | 'func' 'takes' '(' <IDENT> ( ',' <IDENT> )* ')' )? EXPR

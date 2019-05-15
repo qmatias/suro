@@ -34,17 +34,16 @@ pub struct Token {
 }
 
 pub fn tokenize(program_string: &str) -> Vec<Token> {
-    let expressions: [(Regex, Type); 22] = [
+    let expressions: [(Regex, Type); 21] = [
         (Regex::new(r"^--.*?\n").unwrap(), Type::Comment),
         (Regex::new(r#"^".*?""#).unwrap(), Type::String),
         (Regex::new(r"^'.*?'").unwrap(), Type::String),
         (Regex::new(r"^[0-9]+").unwrap(), Type::Integer),
         (Regex::new(r"^;").unwrap(), Type::Terminator),
         (Regex::new(r"^call").unwrap(), Type::FunctionCall),
-        (Regex::new(r"^let").unwrap(), Type::Assignment),
+        (Regex::new(r"^set").unwrap(), Type::Assignment),
         (Regex::new(r"^return").unwrap(), Type::Return),
-        (Regex::new(r"^=").unwrap(), Type::AssignmentOp),
-        (Regex::new(r"^mem").unwrap(), Type::Memvar),
+        (Regex::new(r"^to").unwrap(), Type::AssignmentOp),
         (Regex::new(r"^with").unwrap(), Type::ParameterList),
         (Regex::new(r"^\(").unwrap(), Type::OpenGrouper),
         (Regex::new(r"^\)").unwrap(), Type::CloseGrouper),

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use crate::object::Object;
+
 use crate::builtins::fill_with_builtins;
+use crate::object::Object;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Scope {
@@ -20,14 +21,27 @@ impl Scope {
         }
     }
 
-    pub fn new_with_parent(parent: Box<Scope>) -> Scope {
+    pub fn new_empty() -> Scope {
         Scope {
             memvars: HashMap::new(),
-            parent: Some(parent),
+            parent: None,
         }
     }
 
-    pub fn set_memvar(&mut self, name: &str, value: &Object) {
+    /// returns a new scope this scope as the parent
+    pub fn extend(self) -> Scope {
+        Scope {
+            memvars: HashMap::new(),
+            parent: Some(Box::new(self)),
+        }
+    }
+
+    /// returns the parent scope and destroys this one
+    pub fn retrieve(self) -> Scope {
+        *self.parent.unwrap()
+    }
+
+    pub fn set(&mut self, name: &str, value: &Object) {
         self.memvars.insert(name.to_string(), value.clone());
     }
 
@@ -38,7 +52,7 @@ impl Scope {
                 match &self.parent {
                     Some(parent) => {
                         parent.get(name)
-                    },
+                    }
                     None => None,
                 }
             }

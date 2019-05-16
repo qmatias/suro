@@ -1,8 +1,9 @@
-use crate::scope::Scope;
-use crate::parser::{Program, Statement, Expr, TermOp, ExprOp, Term, Factor};
-use crate::object::Object;
-use core::borrow::Borrow;
 use std::mem;
+
+use crate::builtins::to_bool;
+use crate::object::Object;
+use crate::parser::{Expr, ExprOp, Factor, Program, Statement, Term, TermOp};
+use crate::scope::Scope;
 
 pub struct Interpreter {
     current_scope: Scope,
@@ -17,10 +18,12 @@ impl Interpreter {
         self.eval_statement(&program.body)
     }
 
+    /// create a new scope with self.current_scope as its parent and set self.current_scope to it
     pub fn extend_scope(&mut self) {
         self.current_scope = mem::replace(&mut self.current_scope, Scope::new_empty()).extend();
     }
 
+    /// replace self.current_scope with its parent
     pub fn retrieve_scope(&mut self) {
         self.current_scope = mem::replace(&mut self.current_scope, Scope::new_empty()).retrieve();
     }
@@ -31,7 +34,7 @@ impl Interpreter {
             match statement {
                 Statement::Return { statement: ret_stmt } => {
                     return self.eval_statement(ret_stmt);
-                },
+                }
                 _ => self.eval_statement(statement),
             };
         }
@@ -43,76 +46,94 @@ impl Interpreter {
         match statement {
             Statement::BlockStatement { statements } => {
                 self.eval_block_vec(statements)
-            },
-            Statement::Assign { ident, expr } => {
-                self.current_scope.set(ident, &self.eval_expr(expr));
+            }
+            Statement::Assign { ident, expr, change } => {
+                let val = self.eval_expr(expr);
+                if *change {
+                    if !self.current_scope.reassign(ident, &val) {
+                        panic!("Variable {} was reassigned but it does not exist.", ident);
+                    }
+                } else {
+                    self.current_scope.set(ident, &val);
+                }
                 Object::Null
-            },
-            Statement::Simple { expr } => {
+            }
+            Statement::Expr { expr } => {
                 self.eval_expr(expr)
-            },
+            }
             Statement::Return { statement: ret_stmt } => {
-                panic!("Attempted to use return outside of block");
-            },
+                // this block will not be called unless there is a
+                // return outside of a block
+                self.eval_statement(ret_stmt)
+            }
             Statement::FunctionDec { params, body } => {
                 Object::Function(params.clone(), *(body).clone())
-            },
-        }
-    }
-
-    pub fn eval_expr(&self, expr: &Expr) -> Object {
-        match expr {
-            Expr::Simple { terms, ops } => {
-                match terms.len() {
-                    0 => Object::Null,
-                    _ => {
-                        let mut value = self.eval_term(terms.first().unwrap());
-                        let mut current_term = 1; // already eval'd first term
-                        while current_term < terms.len() {
-                            value = self.eval_exprop(ops.get(current_term - 1).unwrap(), value,
-                                                     self.eval_term(terms.get(current_term).unwrap()));
-                            current_term += 1;
-                        }
-                        value
-                    },
-                }
-            },
-            Expr::FunctionCall { func, args } => {
-                match self.eval_factor(func) {
-                    Object::RustFunction(func) => {
-                        // evaluate arguments
-                        let obj_args = args.iter().map(|expr| self.eval_expr(expr)).collect::<Vec<_>>();
+            }
+            Statement::FunctionCall { func, args } => {
+                match self.eval_statement(func) {
+                    Object::RustFunction(func) => { // evaluate arguments
+                        let obj_args = args.iter().map(|stmt| self.eval_statement(stmt)).collect::<Vec<_>>();
                         func(obj_args)
-                    },
+                    }
                     obj => panic!("Cannot call {:?}", obj),
                 }
-            },
+            }
+            Statement::If { conditions } => {
+                for condition in conditions {
+                    match condition {
+                        (Some(cond_stmt), consequent) => {
+                            if to_bool(&self.eval_statement(cond_stmt)) {
+                                return self.eval_statement(consequent);
+                            }
+                        }
+                        (None, consequent) => return self.eval_statement(consequent),
+                    }
+                };
+                Object::Null
+            }
         }
     }
 
-    pub fn eval_term(&self, term: &Term) -> Object {
+    pub fn eval_expr(&mut self, expr: &Expr) -> Object {
+        match expr.terms.len() {
+            0 => Object::Null,
+            _ => {
+                let mut total = self.eval_term(expr.terms.first().unwrap());
+                let mut current_term = 1; // already eval'd first term
+                while current_term < expr.terms.len() {
+                    let right = self.eval_term(expr.terms.get(current_term).unwrap());
+                    total = self.eval_exprop(expr.ops.get(current_term - 1).unwrap(), total, right);
+                    current_term += 1;
+                }
+                total
+            }
+        }
+    }
+
+    pub fn eval_term(&mut self, term: &Term) -> Object {
         match term.factors.len() {
             0 => Object::Null,
             _ => {
-                let mut value = self.eval_factor(term.factors.first().unwrap());
-                let mut current_factor = 1; // already eval'd first term
+                let mut total = self.eval_factor(term.factors.first().unwrap());
+                let mut current_factor = 1; // already eval'd first factor
                 while current_factor < term.factors.len() {
-                    value = self.eval_termop(term.ops.get(current_factor - 1).unwrap(), value,
-                                             self.eval_factor(term.factors.get(current_factor).unwrap()));
+                    let right = self.eval_factor(term.factors.get(current_factor).unwrap());
+                    total = self.eval_termop(term.ops.get(current_factor - 1).unwrap(), total, right);
                     current_factor += 1;
                 }
-                value
-            },
+                total
+            }
         }
     }
 
-    pub fn eval_factor(&self, factor: &Factor) -> Object {
+    pub fn eval_factor(&mut self, factor: &Factor) -> Object {
         match factor {
             Factor::IdentFactor(ident) => self.current_scope.get(ident)
                 .unwrap_or_else(|| panic!("Identifier not found in current scope: {}", ident)),
             Factor::StringFactor(string) => Object::String(string.clone()),
+            Factor::BoolFactor(val) => Object::Boolean(val.clone()),
             Factor::IntFactor(num) => Object::Integer(num.clone()),
-            Factor::ExprFactor(expr) => self.eval_expr(expr),
+            Factor::StmtFactor(statement) => self.eval_statement(statement),
         }
     }
 
@@ -123,13 +144,13 @@ impl Interpreter {
                     TermOp::Div => l_num / r_num,
                     TermOp::Mul => l_num * r_num,
                 })
-            },
+            }
             (TermOp::Mul, Object::String(string), Object::Integer(amt)) => {
                 if *amt < 0 {
                     panic!("Cannot repeat string < 0 times!");
                 }
                 Object::String(string.repeat(*amt as usize))
-            },
+            }
             _ => panic!("Unsupported operation {:?} for {:?} and {:?}", op, left, right),
         }
     }
@@ -141,12 +162,12 @@ impl Interpreter {
                     ExprOp::Add => l_num + r_num,
                     ExprOp::Sub => l_num - r_num,
                 })
-            },
+            }
             (ExprOp::Add, Object::String(l_string), Object::String(r_string)) => {
                 let mut new_str = l_string.clone();
                 new_str.push_str(r_string.as_str());
                 Object::String(new_str)
-            },
+            }
             _ => panic!("Unsupported operation {:?} for {:?} and {:?}", op, left, right),
         }
     }

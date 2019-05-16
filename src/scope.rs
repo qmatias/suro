@@ -45,6 +45,24 @@ impl Scope {
         self.memvars.insert(name.to_string(), value.clone());
     }
 
+    pub fn reassign(&mut self, name: &str, value: &Object) -> bool {
+        match self.memvars.get(name) {
+            Some(object) => {
+                self.set(name, value);
+                true
+            },
+            None => {
+                match &mut self.parent {
+                    Some(parent) => {
+                        parent.reassign(name, value);
+                        true
+                    }
+                    None => false,
+                }
+            }
+        }
+    }
+
     pub fn get(&self, name: &str) -> Option<Object> {
         match self.memvars.get(name) {
             Some(object) => Some(object.clone()),

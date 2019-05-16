@@ -18,12 +18,16 @@ fn main() {
             .help("The file to run")
             .required(true)
             .index(1))
-        .arg(Arg::with_name("v")
+        .arg(Arg::with_name("verbose")
             .short("v")
+            .long("verbose")
             .help("Sets verbose mode"))
         .get_matches();
 
-    let verbose = matches.is_present("v");
+    let verbose = matches.is_present("verbose");
+    if verbose {
+        println!("ASDF");
+    }
 
     let tokens = token::tokenize(&fs::read_to_string(matches.value_of("FILE").unwrap()).unwrap());
     if verbose {

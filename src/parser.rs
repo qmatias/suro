@@ -1,5 +1,4 @@
 use crate::token::{Token, Type};
-use crate::scope::Scope;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TermOp {
@@ -23,6 +22,7 @@ pub enum Statement {
     Assign {
         ident: String,
         expr: Expr,
+        change: bool,
     },
     FunctionDec {
         params: Vec<String>,
@@ -31,24 +31,25 @@ pub enum Statement {
     Return {
         statement: Box<Statement>,
     },
-    Simple {
+    Expr {
         expr: Expr,
     },
     BlockStatement {
         statements: Vec<Statement>,
     },
+    If {
+        conditions: Vec<(Option<Statement>, Statement)>,
+    },
+    FunctionCall {
+        func: Box<Statement>,
+        args: Vec<Statement>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
-    FunctionCall {
-        func: Factor,
-        args: Vec<Expr>,
-    },
-    Simple {
-        terms: Vec<Term>,
-        ops: Vec<ExprOp>,
-    },
+pub struct Expr {
+    pub terms: Vec<Term>,
+    pub ops: Vec<ExprOp>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,7 +62,8 @@ pub struct Term {
 pub enum Factor {
     IntFactor(i32),
     StringFactor(String),
-    ExprFactor(Box<Expr>),
+    BoolFactor(bool),
+    StmtFactor(Box<Statement>),
     IdentFactor(String),
 }
 
@@ -82,7 +84,6 @@ impl Parser {
         self.parse_program()
     }
 
-    // PROGRAM = BLOCK
     fn parse_program(&mut self) -> Program {
         let program = Program {
             body: self.parse_statement(),
@@ -91,7 +92,6 @@ impl Parser {
         program
     }
 
-    // BLOCK = '{' ( LINE )* '}'
     fn parse_block(&mut self) -> Statement {
         self.expect_consume(Type::BlockStart);
         Statement::BlockStatement {
@@ -106,17 +106,12 @@ impl Parser {
         }
     }
 
-    // LINE = STATEMENT ';'
     fn parse_line(&mut self) -> Statement {
         let statement = self.parse_statement();
         self.expect_consume(Type::Terminator);
         statement
     }
 
-    // STATEMENT = 'make' 'memvar' <IDENT> '=' EXPR
-    //            | return STATEMENT
-    //            | EXPR
-    //            | BLOCK
     fn parse_statement(&mut self) -> Statement {
         match self.current_unwrap().token_type {
             Type::Assignment => {
@@ -127,20 +122,68 @@ impl Parser {
                 Statement::Assign {
                     ident,
                     expr,
+                    change: false,
                 }
-            },
+            }
+            Type::Change => {
+                self.consume_unwrap(); // consume let
+                let ident = self.expect_consume(Type::Ident).str; // consume and store ident
+                self.expect_consume(Type::AssignmentOp); // consume equals sine
+                let expr = self.parse_expr();
+                Statement::Assign {
+                    ident,
+                    expr,
+                    change: true,
+                }
+            }
             Type::Return => {
                 self.consume_unwrap(); // consume return
                 Statement::Return { statement: Box::new(self.parse_statement()) }
-            },
+            }
             Type::BlockStart => {
                 self.parse_block()
-            },
-            _ => Statement::Simple { expr: self.parse_expr() },
+            }
+            Type::If => {
+                Statement::If {
+                    conditions: {
+                        let mut val = Vec::new();
+                        val.push(self.parse_condition_tuple());
+                        loop {
+                            if let Type::Else = self.current_unwrap().token_type {
+                                val.push(self.parse_condition_tuple());
+                            } else {
+                                break;
+                            }
+                        }
+                        val
+                    }
+                }
+            }
+            _ => Statement::Expr { expr: self.parse_expr() },
         }
     }
 
-    // EXPR = TERM ( ( '+' | '-' ) TERM )*
+    fn parse_condition_tuple(&mut self) -> (Option<Statement>, Statement) {
+        match self.current_unwrap().token_type {
+            Type::If => {
+                self.consume_unwrap();
+                let condition = self.parse_statement();
+                self.expect_consume(Type::Then);
+                let consequent = self.parse_statement();
+                (Some(condition), consequent)
+            },
+            Type::Else => {
+                self.consume_unwrap();
+                if self.current_unwrap().token_type == Type::If {
+                    self.parse_condition_tuple()
+                } else {
+                    (None, self.parse_statement())
+                }
+            },
+            _ => panic!("Error parsing condition tuple at token: {:?}, expected If or Else token", self.current_unwrap()),
+        }
+    }
+
     fn parse_expr(&mut self) -> Expr {
         let mut terms = vec![self.parse_term()];
         let mut ops = Vec::new();
@@ -157,13 +200,12 @@ impl Parser {
             self.consume_unwrap(); // consume operator
             terms.push(self.parse_term());
         };
-        Expr::Simple {
+        Expr {
             terms,
             ops,
         }
     }
 
-    // TERM = FACTOR ( ( '*' | '/' ) FACTOR )*
     fn parse_term(&mut self) -> Term {
         let mut term = Term {
             factors: vec![self.parse_factor()],
@@ -185,8 +227,6 @@ impl Parser {
         term
     }
 
-    // FACTOR = <NUMBER> | STRING | <IDENT> | '(' EXPR ')'
-    //          | 'call' <FACTOR> ( 'with' '(' EXPR ( ',' EXPR )* ')' )?
     fn parse_factor(&mut self) -> Factor {
         match self.current_unwrap().token_type {
             Type::Integer => Factor::IntFactor(self.consume_unwrap().str.trim().parse::<i32>()
@@ -195,35 +235,47 @@ impl Parser {
                 let full = self.consume_unwrap().str;
                 String::from(&full[1..full.len() - 1]) // remove start and end quotes
             }),
+            Type::True => {
+                self.consume_unwrap();
+                Factor::BoolFactor(true)
+            }
+            Type::False => {
+                self.consume_unwrap();
+                Factor::BoolFactor(false)
+            }
             Type::Ident => Factor::IdentFactor(self.consume_unwrap().str),
             Type::OpenGrouper => {
                 self.consume_unwrap(); // consume parentheses
-                let factor: Factor = Factor::ExprFactor(Box::new(
-                    self.parse_expr()
+                let factor: Factor = Factor::StmtFactor(Box::new(
+                    self.parse_statement()
                 ));
                 self.expect_consume(Type::CloseGrouper);
                 factor
-            }, Type::FunctionCall => {
+            }
+            Type::BlockStart => {
+                Factor::StmtFactor(Box::new(self.parse_block()))
+            }
+            Type::FunctionCall => {
                 self.consume_unwrap(); // consume FunctionCall
-                Factor::ExprFactor(Box::new(Expr::FunctionCall {
-                    func: self.parse_factor(),
+                Factor::StmtFactor(Box::new(Statement::FunctionCall {
+                    func: Box::new(self.parse_statement()),
                     args: { // build arguments
                         let mut val = Vec::new();
                         if self.consume_if(Type::ParameterList) {
                             self.expect_consume(Type::OpenGrouper); // consume opening paren of args
                             loop {
-                                val.push(self.parse_expr());
+                                val.push(self.parse_statement());
                                 if !self.consume_if(Type::Separator) {
                                     break;
                                 }
                             }
-                            self.expect_consume(Type::CloseGrouper);
+                            self.expect_consume(Type::CloseGrouper); // consume closing paren
                         }
                         val
                     },
                 }))
-            },
-            _ => panic!("Tried to parse factor but token {:?} is not of type Num, String, Ident, or OpenGrouper", self.current_unwrap()),
+            }
+            _ => panic!("Tried to parse factor but token {:?} is not of type Num, String, Ident, OpenGrouper, or FunctionCall", self.current_unwrap()),
         }
     }
 

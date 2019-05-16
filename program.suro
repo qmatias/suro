@@ -1,9 +1,14 @@
 {
-    set outer to 5;
-    {
-        set inner to 3;
-        call print with (inner);
+    set var to true;
+
+    -- make sure var is false
+    if var then {
+        change var to false;
     };
-    call print with (outer);
-    return 1;
+
+    if var then {
+        call print with ("Var is true");
+    } else {
+        call print with ("Var is false");
+    };
 }

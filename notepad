@@ -5,13 +5,14 @@
 PROGRAM = BLOCK
 BLOCK = '{' ( LINE )* '}'
 LINE = STATEMENT ';'
-STATEMENT = 'make' 'memvar' <IDENT> '=' EXPR
+STATEMENT = 'set' <IDENT> 'to' EXPR
             | return STATEMENT
             | EXPR
             | BLOCK
+            | 'if' STATEMENT 'then' STATEMENT
 EXPR = TERM ( ( '+' | '-' ) TERM )*
 TERM = FACTOR ( ( '*' | '/' ) FACTOR )*
 STRING = "Value"
-FACTOR = <NUMBER> | STRING | <IDENT> | '(' EXPR ')'
-         | 'call' <FACTOR> ( 'with' '(' EXPR ( ',' EXPR )* ')' )?
+FACTOR = <NUMBER> | STRING | <IDENT> | '(' STATEMENT ')' | BLOCK | <BOOL>
+         | 'call' STATEMENT ( 'with' '(' STATEMENT ( ',' STATEMENT )* ')' )?
          | 'func' 'takes' '(' <IDENT> ( ',' <IDENT> )* ')' )? EXPR

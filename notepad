@@ -9,7 +9,7 @@ STATEMENT = 'set' <IDENT> 'to' EXPR
             | return STATEMENT
             | EXPR
             | BLOCK
-            | 'if' STATEMENT 'then' STATEMENT
+            | 'if' STATEMENT 'then' STATEMENT ( 'else' 'if' STATEMENT 'then' STATEMENT )* ( 'else' STATEMENT )?
 EXPR = TERM ( ( '+' | '-' ) TERM )*
 TERM = FACTOR ( ( '*' | '/' ) FACTOR )*
 STRING = "Value"

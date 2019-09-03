@@ -1,5 +1,6 @@
 {
     set var to true;
+    set other to false;
 
     -- make sure var is false
     if var then {
@@ -7,8 +8,10 @@
     };
 
     if var then {
-        call print with ("Var is true");
+        call print with ("var is true");
+    } else if other then {
+        call print with ("other is true");
     } else {
-        call print with ("Var is false");
+        call print with ("Neither var nor other are true");
     };
 }
